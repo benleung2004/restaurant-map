@@ -1,0 +1,507 @@
+<!DOCTYPE html>
+<html lang="zh-Hant" data-theme="light">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Restaurant Memory Map</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css"/>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css"/>
+  <link rel="stylesheet" href="styles.css"/>
+</head>
+<body>
+<a href="#main-content" style="position:absolute;left:-9999px;top:auto;width:1px;height:1px;overflow:hidden">Skip to content</a>
+
+<div class="app">
+
+  <!-- Top Bar -->
+  <header class="topbar">
+    <div class="brand">
+      <svg class="logo" viewBox="0 0 48 48" fill="none" aria-label="Restaurant Memory Map">
+        <path d="M11 13C11 9.686 13.686 7 17 7V20" stroke="currentColor" stroke-width="3" stroke-linecap="round"/>
+        <path d="M17 7C20.314 7 23 9.686 23 13V20" stroke="currentColor" stroke-width="3" stroke-linecap="round"/>
+        <path d="M14 20H20V39" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+        <path d="M31 7V22" stroke="currentColor" stroke-width="3" stroke-linecap="round"/>
+        <path d="M31 22C27.686 22 25 19.314 25 16V13C25 9.686 27.686 7 31 7C34.314 7 37 9.686 37 13V39" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+      <div>
+        <h1>Restaurant Memory Map</h1>
+        <p>記低食過同想試嘅店，地圖做入口</p>
+      </div>
+    </div>
+    <div class="topbar-actions">
+      <button class="btn btn-primary btn-add" type="button" id="openAddBtn">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+        新增餐廳
+      </button>
+      <button class="btn" type="button" id="openStatsBtn">📊 統計頁</button>
+      <button class="btn" type="button" id="openSettingsBtn" title="Google Sheet 同步與 App 設定">⚙️ 設定</button>
+      <button class="btn" type="button" id="loadSampleBtn">載入 Sample</button>
+      <button class="btn" type="button" id="openAllFilesBtn">📁 所有檔案</button>
+      <button class="btn" type="button" onclick="window.print()" aria-label="列印">🖨 列印</button>
+      <button class="btn" type="button" data-theme-toggle aria-label="切換深淺色模式">🌙</button>
+    </div>
+  </header>
+
+  <!-- Main -->
+  <main class="layout" id="main-content">
+
+    <!-- Sidebar -->
+    <aside class="sidebar">
+
+      <section class="panel panel-connection">
+        <div class="connection-bar">
+          <div class="connection-info">
+            <span class="connection-dot disconnected" id="connectionDot" aria-hidden="true"></span>
+            <div>
+              <div class="connection-label">Google Sheet</div>
+              <div class="connection-text" id="connectionStatusText">載入中…</div>
+            </div>
+          </div>
+          <button class="btn" type="button" id="openSettingsBtnSidebar">⚙️ 設定</button>
+        </div>
+      </section>
+
+      <section class="panel">
+        <h2>搜尋與篩選</h2>
+        <div class="filters">
+          <div class="field-full">
+            <label for="searchInput">搜尋店名 / 城市 / 標籤</label>
+            <input id="searchInput" type="text" placeholder="例如：難波、拉麵、必食"/>
+          </div>
+          <div class="field">
+            <label for="statusFilter">狀態</label>
+            <select id="statusFilter">
+              <option value="all">全部</option>
+              <option value="visited">已食</option>
+              <option value="wishlist">Wishlist</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="countryFilter">國家</label>
+            <select id="countryFilter"><option value="all">全部</option></select>
+          </div>
+          <div class="field">
+            <label for="cityFilter">城市</label>
+            <select id="cityFilter"><option value="all">全部</option></select>
+          </div>
+          <div class="field">
+            <label for="cuisineFilter">料理</label>
+            <select id="cuisineFilter"><option value="all">全部</option></select>
+          </div>
+          <div class="field-full">
+            <label>多城市篩選</label>
+            <div class="tag-filter-bar" id="cityChipBar"></div>
+            <div class="helper">可同時選多個城市；如已選城市 chip，會忽略上面的單一城市下拉。</div>
+          </div>
+          <div class="field-full">
+            <label for="ratingSource">評分範圍</label>
+            <div class="rating-filter-row">
+              <select id="ratingSource">
+                <option value="my_rating">私人評分</option>
+                <option value="tabelog_rating">Tabelog</option>
+              </select>
+              <input id="ratingMin" type="range" min="0" max="5" step="0.1" value="0"/>
+              <div class="rating-filter-value" id="ratingMinValue">0+</div>
+            </div>
+          </div>
+          <div class="field-full">
+            <label>列表顯示</label>
+            <div class="mode-toggle list-view-toggle">
+              <button type="button" id="cardViewBtn" class="active">🗂 卡片</button>
+              <button type="button" id="tableViewBtn">📊 表格</button>
+            </div>
+          </div>
+          <div class="field-full">
+            <label for="sortBy">排序</label>
+            <select id="sortBy">
+              <option value="recent">最近 visit / 加入</option>
+              <option value="rating">私人評分高至低</option>
+              <option value="name">店名 A–Z</option>
+            </select>
+          </div>
+        </div>
+        <div style="margin-top:var(--space-4)">
+          <label style="font-size:var(--text-xs);font-weight:700;letter-spacing:.04em;color:var(--color-text-muted)">會再去？</label>
+          <div class="quick-filters" id="revisitFilters"></div>
+        </div>
+        <div style="margin-top:var(--space-3)">
+          <label style="font-size:var(--text-xs);font-weight:700;letter-spacing:.04em;color:var(--color-text-muted)">標籤篩選（可多選）</label>
+          <div class="tag-filter-bar" id="tagFilterBar"></div>
+        </div>
+        <div class="stat-grid" id="stats"></div>
+      </section>
+
+      <div id="resultCount" style="padding:var(--space-2) var(--space-4) 0"></div>
+      <section class="list-wrap" id="listWrap" aria-live="polite" aria-label="餐廳列表"></section>
+      <section class="table-wrap" id="tableWrap" aria-live="polite" aria-label="餐廳表格" style="display:none"></section>
+
+    </aside>
+
+    <!-- Map -->
+    <section class="map-panel" aria-label="餐廳地圖">
+      <div class="map-overlay">
+        <div class="pill"><span class="legend-dot" style="background:var(--color-success)"></span>已食</div>
+        <div class="pill"><span class="legend-dot" style="background:var(--color-warning)"></span>Wishlist</div>
+        <div class="pill">撳標記可看詳情 · 評分顯示於標記上</div>
+      </div>
+      <button id="fullscreenMapBtn" type="button" aria-pressed="false">⛶ 全螢幕地圖</button>
+      <div id="map"></div>
+    </section>
+
+  </main>
+
+  <!-- Export Bar -->
+  <div class="export-bar">
+    <button class="btn" type="button" id="exportCsvBtn">⬇️ 匯出 CSV 備份</button>
+    <button class="btn" type="button" id="importCsvBtn">⬆️ 匯入 CSV</button>
+    <input type="file" id="importCsvFile" accept=".csv" style="display:none"/>
+    <button class="btn" type="button" onclick="clearCache()">🗑 清除快取</button>
+    <button class="btn" type="button" id="openSettingsBtnFooter">⚙️ 設定</button>
+    <span style="font-size:var(--text-xs);color:var(--color-text-muted);align-self:center">匯出 / 匯入 CSV · 資料自動儲存至本地快取</span>
+  </div>
+
+</div>
+
+<!-- ── Step 5: Stats Overlay ─────────────────────────────────── -->
+<div class="stats-overlay" id="statsOverlay" role="dialog" aria-modal="true" aria-label="統計頁">
+  <div class="stats-topbar">
+    <h2>📊 統計分析</h2>
+    <button class="btn" type="button" id="closeStatsBtn">✕ 關閉</button>
+  </div>
+  <div class="stats-tabs">
+    <button class="stats-tab active" type="button" data-tab="s1">📊 各國統計</button>
+    <button class="stats-tab" type="button" data-tab="s2">🏆 Top 10 評分</button>
+    <button class="stats-tab" type="button" data-tab="s3">🚫 避雷名單</button>
+    <button class="stats-tab" type="button" data-tab="s4">💰 消費統計</button>
+    <button class="stats-tab" type="button" data-tab="s5">🗓 時間軸</button>
+    <button class="stats-tab" type="button" data-tab="s6">🍽 料理類型</button>
+  </div>
+  <div class="stats-body">
+    <div class="stats-section active" id="statsSection_s1"></div>
+    <div class="stats-section" id="statsSection_s2"></div>
+    <div class="stats-section" id="statsSection_s3"></div>
+    <div class="stats-section" id="statsSection_s4"></div>
+    <div class="stats-section" id="statsSection_s5"></div>
+    <div class="stats-section" id="statsSection_s6"></div>
+  </div>
+</div>
+
+<!-- ── Settings Modal ─────────────────────────────────────────── -->
+<div class="modal-overlay" id="settingsModal" role="dialog" aria-modal="true" aria-labelledby="settingsModalTitle">
+  <div class="modal modal-settings">
+    <div class="modal-header">
+      <h2 id="settingsModalTitle">⚙️ 設定</h2>
+      <button class="modal-close" id="closeSettingsModal" type="button" aria-label="關閉">✕</button>
+    </div>
+    <div class="modal-body settings-body">
+
+      <section class="settings-section">
+        <h3 class="settings-section-title">📊 Google Sheet 同步</h3>
+        <p class="settings-desc">設定 Web App URL 後，新增餐廳會自動寫入 Sheet，重新整理也不會消失。</p>
+        <div class="settings-status-row">
+          <span id="settingsSyncStatus">⚪ 未連接</span>
+          <span id="settingsTestResult" class="settings-test-result"></span>
+        </div>
+        <div class="form-grid">
+          <div class="field-full">
+            <label for="gasUrl">Sheet 同步 Web App URL</label>
+            <input id="gasUrl" type="url" placeholder="https://script.google.com/macros/s/…/exec" autocomplete="off"/>
+            <div class="helper">Sheet → Extensions → Apps Script → 貼上 <code>apps-script/Code.gs</code> → 部署 Web app（Me · Anyone）</div>
+          </div>
+          <div class="field-full">
+            <label for="sheetUrl">CSV 連結（備用讀取）</label>
+            <input id="sheetUrl" type="url" placeholder="https://docs.google.com/spreadsheets/d/…/export?format=csv&gid=…" autocomplete="off"/>
+            <div class="helper">未設定 Web App 時使用；或 File → Share → Publish to web → CSV</div>
+          </div>
+        </div>
+        <div class="settings-actions">
+          <button class="btn btn-primary" type="button" id="loadSheetBtn">🔄 讀取 Sheet</button>
+          <button class="btn" type="button" id="openSheetDirectBtn">🔗 開啟 Sheet</button>
+          <button class="btn" type="button" id="settingsTestConnectionBtn">🔌 測試連線</button>
+        </div>
+        <div class="auto-refresh-row">
+          <label class="toggle-switch">
+            <input type="checkbox" id="autoRefreshToggle"/>
+            <span class="toggle-slider"></span>
+          </label>
+          <span class="auto-refresh-label">自動更新</span>
+          <select id="autoRefreshInterval">
+            <option value="5">每 5 分鐘</option>
+            <option value="10">每 10 分鐘</option>
+            <option value="30">每 30 分鐘</option>
+            <option value="60">每 60 分鐘</option>
+          </select>
+          <span id="autoRefreshStatus">⚪ 未啟動</span>
+        </div>
+        <div id="cacheBadge" class="settings-cache-badge" style="display:none"></div>
+      </section>
+
+      <section class="settings-section">
+        <h3 class="settings-section-title">💾 資料管理</h3>
+        <p class="settings-desc">本地快取作為備份；清除後下次開啟會重新從 Sheet 讀取。</p>
+        <div class="settings-actions">
+          <button class="btn" type="button" id="settingsLoadSampleBtn">📋 載入 Sample 資料</button>
+          <button class="btn" type="button" id="settingsClearCacheBtn">🗑 清除本地快取</button>
+        </div>
+      </section>
+
+      <section class="settings-section">
+        <h3 class="settings-section-title">📥 匯入 / 匯出</h3>
+        <p class="settings-desc">以 CSV 備份或還原餐廳清單（與 Sheet 欄位相同）。</p>
+        <div class="settings-actions">
+          <button class="btn" type="button" id="settingsExportBtn">⬇️ 匯出 CSV</button>
+          <button class="btn" type="button" id="settingsImportBtn">⬆️ 匯入 CSV</button>
+          <label class="settings-inline-label" for="importMode">匯入模式</label>
+          <select id="importMode">
+            <option value="replace">替換現有資料</option>
+            <option value="merge">合併（跳過重複）</option>
+          </select>
+        </div>
+      </section>
+
+      <section class="settings-section">
+        <h3 class="settings-section-title">🎨 外觀</h3>
+        <div class="settings-actions">
+          <button class="btn" type="button" id="settingsThemeBtn">切換深淺色模式</button>
+        </div>
+      </section>
+
+      <section class="settings-section settings-section-muted">
+        <h3 class="settings-section-title">💡 之後可加入的設定</h3>
+        <ul class="settings-suggestions">
+          <li>地圖預設中心與縮放級別</li>
+          <li>預設篩選（國家、狀態、評分）</li>
+          <li>新增餐廳的預設模式（完整 / 快速 Wishlist）</li>
+          <li>列表預設排序方式</li>
+          <li>Supabase 雲端筆記連線設定</li>
+          <li>多個 Sheet 來源切換</li>
+        </ul>
+      </section>
+
+    </div>
+    <div class="modal-footer">
+      <button class="btn" type="button" id="closeSettingsModalFooter">取消</button>
+      <button class="btn btn-primary" type="button" id="settingsSaveReloadBtn">💾 儲存並重新載入</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Add/Edit Modal ─────────────────────────────────────────── -->
+<div class="modal-overlay" id="addModal" role="dialog" aria-modal="true" aria-labelledby="addModalTitle">
+  <div class="modal">
+    <div class="modal-header">
+      <h2 id="addModalTitle">新增餐廳</h2>
+      <button class="modal-close" id="closeAddModal" aria-label="關閉">✕</button>
+    </div>
+    <form class="modal-body" id="addForm" onsubmit="return false">
+
+      <div>
+        <div class="form-section-title" style="margin-bottom:var(--space-2)">模式選擇</div>
+        <div class="mode-toggle">
+          <button type="button" id="modeToggleFull" class="active" onclick="setFormMode('full')">📝 完整資料</button>
+          <button type="button" id="modeToggleQuick" onclick="setFormMode('quick')">⚡ 快速 Wishlist</button>
+        </div>
+        <div class="helper" style="margin-top:var(--space-2)">快速模式只需填店名 + 國家，方便旅行途中速記</div>
+      </div>
+
+      <div>
+        <div class="form-section-title">基本資料 <span style="color:var(--color-notification)">*必填</span></div>
+        <div class="form-grid" style="margin-top:var(--space-3)">
+          <div class="field-full autocomplete-wrap">
+            <label for="af_name">店名 <span style="color:var(--color-notification)">*</span></label>
+            <input id="af_name" type="text" placeholder="例如：一蘭拉麵 難波店" autocomplete="off"/>
+            <ul class="autocomplete-list" id="acList" role="listbox"></ul>
+          </div>
+          <div class="field">
+            <label for="af_status">狀態</label>
+            <select id="af_status">
+              <option value="wishlist">Wishlist（想試）</option>
+              <option value="visited">已食</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="af_country">國家 <span style="color:var(--color-notification)">*</span></label>
+            <input id="af_country" type="text" placeholder="例如：日本"/>
+            <div id="tabelogHint" style="display:none;font-size:var(--text-xs);margin-top:4px;color:var(--color-primary)"></div>
+          </div>
+          <div class="field form-full-only">
+            <label for="af_city">城市</label>
+            <input id="af_city" type="text" placeholder="例如：大阪"/>
+          </div>
+          <div class="field form-full-only">
+            <label for="af_district">區域</label>
+            <input id="af_district" type="text" placeholder="例如：難波"/>
+          </div>
+          <div class="field form-full-only">
+            <label for="af_cuisine">料理類型</label>
+            <input id="af_cuisine" type="text" placeholder="例如：拉麵"/>
+          </div>
+        </div>
+      </div>
+
+      <div class="form-full-only">
+        <div class="form-section-title">位置資料</div>
+        <div class="form-grid" style="margin-top:var(--space-3)">
+          <div class="field-full">
+            <label for="af_maps_url">Google Maps 地點 URL</label>
+            <input id="af_maps_url" type="text" placeholder="貼入 Google Maps 分享連結，系統會自動提取座標"/>
+          </div>
+          <div class="field">
+            <label for="af_lat">緯度 (lat)</label>
+            <input id="af_lat" type="text" placeholder="34.666200"/>
+          </div>
+          <div class="field">
+            <label for="af_lng">經度 (lng)</label>
+            <input id="af_lng" type="text" placeholder="135.500600"/>
+          </div>
+        </div>
+      </div>
+
+      <div class="form-full-only">
+        <div class="form-section-title">食飯記錄</div>
+        <div class="form-grid" style="margin-top:var(--space-3)">
+          <div class="field">
+            <label for="af_visit_date">食飯日期</label>
+            <input id="af_visit_date" type="date"/>
+          </div>
+          <div class="field">
+            <label for="af_my_rating">私人評分 (0–5)</label>
+            <input id="af_my_rating" type="number" min="0" max="5" step="0.1" placeholder="例如 4.5"/>
+          </div>
+          <div class="field">
+            <label for="af_tabelog_rating">Tabelog 評分</label>
+            <input id="af_tabelog_rating" type="text" placeholder="例如 3.8"/>
+          </div>
+          <div class="field">
+            <label for="af_price">人均消費</label>
+            <input id="af_price" type="text" placeholder="例如 ¥1200"/>
+          </div>
+          <div class="field">
+            <label for="af_would_revisit">會再去？</label>
+            <select id="af_would_revisit">
+              <option value="">— 未填 —</option>
+              <option value="✅">✅ 會</option>
+              <option value="❌">❌ 不會</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <div class="form-full-only">
+        <div class="form-section-title">標籤與備註</div>
+        <div class="form-grid" style="margin-top:var(--space-3)">
+          <div class="field-full">
+            <label for="af_tags">標籤（用逗號分隔）</label>
+            <input id="af_tags" type="text" placeholder="必食,深夜,排隊值得"/>
+          </div>
+          <div class="field-full">
+            <label for="af_photo_url">相片 URL</label>
+            <input id="af_photo_url" type="text" placeholder="https://…"/>
+            <div class="photo-preview" id="photoPreview"><img src="" alt="相片預覧"/></div>
+          </div>
+          <div class="field-full">
+            <label for="af_notes">備註 / 心得</label>
+            <textarea id="af_notes" rows="3" placeholder="湯底濃郁，記得叫硬麵…"></textarea>
+          </div>
+          <div class="field-full">
+            <label for="af_source_url">推介來源 URL</label>
+            <input id="af_source_url" type="text" placeholder="https://…"/>
+          </div>
+        </div>
+      </div>
+
+    </form>
+    <div class="modal-footer">
+      <button class="btn" type="button" id="closeAddModal2">取消</button>
+      <button class="btn btn-primary" type="button" id="addFormSubmit">✅ 新增餐廳</button>
+    </div>
+  </div>
+</div>
+
+
+<!-- U5: Share Card Modal -->
+<div class="share-modal-overlay" id="shareModal" role="dialog" aria-modal="true" aria-label="分享餐廳">
+  <div class="share-modal">
+    <div class="share-modal-header">
+      <h3>🔗 分享餐廳資訊</h3>
+      <button class="modal-close" id="closeShareModal" aria-label="關閉">✕</button>
+    </div>
+    <div class="share-modal-body">
+      <label for="shareText" style="margin-bottom:var(--space-2)">複製以下文字，貼到 WhatsApp / Telegram / Notes：</label>
+      <textarea id="shareText" readonly></textarea>
+    </div>
+    <div class="share-modal-footer">
+      <button class="btn" type="button" id="closeShareModal2" onclick="document.getElementById('shareModal').classList.remove('open')">關閉</button>
+      <button class="btn btn-primary" type="button" id="copyShareBtn">📋 複製文字</button>
+    </div>
+  </div>
+</div>
+
+<!-- U2: Mobile Bottom Nav -->
+<nav class="mobile-nav" id="mobileNav" aria-label="底部導航">
+  <div class="mobile-nav-inner">
+    <button class="mobile-nav-btn active" type="button" data-nav="list" aria-label="列表">
+      <span class="nav-icon">🗂</span>列表
+    </button>
+    <button class="mobile-nav-btn" type="button" data-nav="map" aria-label="地圖">
+      <span class="nav-icon">🗺</span>地圖
+    </button>
+    <button class="mobile-nav-btn" type="button" data-nav="add" aria-label="新增">
+      <span class="nav-icon">➕</span>新增
+    </button>
+    <button class="mobile-nav-btn" type="button" data-nav="stats" aria-label="統計">
+      <span class="nav-icon">📊</span>統計
+    </button>
+  </div>
+</nav>
+
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+<script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
+<script src="main.js"></script>
+
+<!-- PHASE A: Notes Chat Panel -->
+<div class="notes-panel" id="notesPanel" role="dialog" aria-modal="true" aria-label="筆記">
+  <div class="notes-panel-header">
+    <h3 id="notesPanelTitle">筆記</h3>
+    <button class="modal-close" id="closeNotesPanel" aria-label="關閉">✕</button>
+  </div>
+  <div class="notes-feed" id="notesFeed"></div>
+  <div class="notes-file-preview" id="notesFilePreview"></div>
+  <div class="notes-composer">
+    <textarea id="notesInput" placeholder="輸入筆記… (Ctrl+Enter 發送)" rows="3"></textarea>
+    <div class="notes-composer-actions">
+      <button class="btn" type="button" id="notesAttachBtn">📎 附件</button>
+      <input type="file" id="notesFileInput" multiple accept="image/*,.pdf,.doc,.docx,.txt" style="display:none">
+      <span class="notes-hint">Ctrl+Enter 發送</span>
+      <button class="btn btn-primary" type="button" id="notesSendBtn">發送 ➤</button>
+    </div>
+  </div>
+</div>
+
+<!-- PHASE A: All Files Page -->
+<div class="all-files-overlay" id="allFilesOverlay" role="dialog" aria-modal="true" aria-label="所有檔案">
+  <div class="all-files-topbar">
+    <h2>📁 所有上傳檔案</h2>
+    <button class="btn" type="button" id="closeAllFilesBtn">✕ 關閉</button>
+  </div>
+  <div class="all-files-body" id="allFilesBody"></div>
+</div>
+
+<!-- PHASE A: Debug Log Panel -->
+<div class="debug-log-panel" id="debugLogPanel">
+  <div class="debug-log-toolbar">
+    <span>🪲 Debug Log</span>
+    <button class="btn" type="button" id="debugLogClear" style="font-size:10px;min-height:28px;padding:0.2rem 0.6rem">清除</button>
+  </div>
+  <div class="debug-log-content" id="debugLogContent"></div>
+</div>
+<button id="debugLogToggle" type="button">🪲 Log</button>
+
+</body>
+</html>
